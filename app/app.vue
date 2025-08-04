@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { useTyping } from '../composables/useTyping';
+import { useTyping, type Problem } from '../composables/useTyping';
 
-const problems = ['さくら', 'にっぽん', 'かった', 'けんい', 'タイピングゲーム', 'プログラミング'];
+const problems: Problem[] = [
+  { word: 'タイピングゲーム', kana: 'たいぴんぐげーむ' },
+  { word: '日本', kana: 'にっぽん' },
+  { word: '桜', kana: 'さくら' },
+  { word: 'プログラミング', kana: 'ぷろぐらみんぐ' },
+  { word: '寿司', kana: 'すし' },
+];
 const currentProblemIndex = ref(0);
 
 const {
-  problem,
-  currentInput,
-  isFinished,
-  remainingKana,
+  currentDisplayWord,
+  fullRomaji,
   typedRomaji,
+  currentInput,
+  remainingRomaji,
+  isFinished,
   setProblem,
   handleKeyInput,
 } = useTyping(problems[currentProblemIndex.value]);
@@ -29,7 +36,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     return;
   }
   
-  if (e.key.length === 1 && e.key >= 'a' && e.key <= 'z') {
+  if (e.key.length === 1) {
     handleKeyInput(e.key);
   }
 };
@@ -55,15 +62,22 @@ onUnmounted(() => {
       </header>
 
       <main class="p-8 text-center space-y-6">
-        <p class="text-2xl text-gray-300 font-medium">
-          {{ problem.map(p => p.kana).join('') }}
+        <!-- 1. 日本語の文字列 -->
+        <p class="text-5xl text-white font-semibold tracking-wider">
+          {{ currentDisplayWord }}
+        </p>
+
+        <!-- 2. 代表的なタイピング候補 -->
+        <p class="text-xl text-gray-400 font-mono">
+          {{ fullRomaji }}
         </p>
         
+        <!-- 3. 実際のタイピング内容 -->
         <div class="p-5 bg-gray-800/50 rounded-lg text-4xl font-mono tracking-wider relative overflow-hidden">
-          <div class="absolute top-0 left-0 h-full bg-green-400/20 transition-all duration-150" :style="{ width: `${(typedRomaji.length / (typedRomaji.length + remainingKana.length)) * 100}%` }"></div>
+          <div class="absolute top-0 left-0 h-full bg-green-400/20 transition-all duration-150" :style="{ width: `${(typedRomaji.length / fullRomaji.length) * 100}%` }"></div>
           <span class="relative text-green-400">{{ typedRomaji }}</span>
           <span class="relative text-blue-400 border-b-4 border-blue-500 animate-pulse">{{ currentInput }}</span>
-          <span class="relative text-gray-500">{{ remainingKana.substring(currentInput.length) }}</span>
+          <span class="relative text-gray-500">{{ remainingRomaji }}</span>
         </div>
 
         <div v-if="isFinished" class="p-4 transition-opacity duration-500">

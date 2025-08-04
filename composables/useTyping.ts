@@ -2,6 +2,12 @@
 import { ref, computed, readonly } from 'vue';
 import { kanaToRomanMap, validateInput } from '../utils/typingLogic';
 
+// 問題の形式
+export interface Problem {
+  word: string; // 表示用（漢字など）
+  kana: string; // 判定用（かな）
+}
+
 // 問題の各文字の状態を定義
 interface CharInfo {
   kana: string;
@@ -9,32 +15,40 @@ interface CharInfo {
   typed: boolean;
 }
 
-export function useTyping(word: string) {
-  const problem = ref<CharInfo[]>([]);
+export function useTyping(initialProblem: Problem) {
+  const currentDisplayWord = ref(initialProblem.word);
+  const problemKana = ref<CharInfo[]>([]);
   const currentIndex = ref(0);
   const currentInput = ref('');
   const isFinished = ref(false);
 
   // 現在のターゲット文字
-  const currentTarget = computed(() => problem.value[currentIndex.value] ?? null);
+  const currentTarget = computed(() => problemKana.value[currentIndex.value] ?? null);
 
-  // 表示用の残りかな
-  const remainingKana = computed(() => {
-    return problem.value.map(p => p.kana).join('').substring(currentIndex.value);
-  });
+  // 問題全体のローマ字表記
+  const fullRomaji = computed(() => problemKana.value.map(p => p.romaji).join(''));
 
   // 表示用の入力済みローマ字
   const typedRomaji = computed(() => {
-    return problem.value.slice(0, currentIndex.value).map(p => p.romaji).join('');
+    return problemKana.value.slice(0, currentIndex.value).map(p => p.romaji).join('');
+  });
+
+  // 未入力のローマ字全体
+  const remainingRomaji = computed(() => {
+    if (!currentTarget.value) return '';
+    const untypedCurrent = currentTarget.value.romaji.substring(currentInput.value.length);
+    const future = problemKana.value.slice(currentIndex.value + 1).map(p => p.romaji).join('');
+    return untypedCurrent + future;
   });
 
   /**
    * 新しい単語でタイピング状態を初期化する
-   * @param newWord 新しい日本語の単語
+   * @param newProblem 新しい問題オブジェクト
    */
-  function setProblem(newWord: string) {
-    const chars = newWord.split('');
-    const newProblem: CharInfo[] = [];
+  function setProblem(newProblem: Problem) {
+    currentDisplayWord.value = newProblem.word;
+    const chars = newProblem.kana.split('');
+    const newProblemKana: CharInfo[] = [];
     let i = 0;
 
     while (i < chars.length) {
@@ -59,21 +73,19 @@ export function useTyping(word: string) {
         }
       }
       
-      // 撥音「ん」の特別処理（nが1つの場合）
+      // 撥音「ん」の特別処理
       if (kana === 'ん' && i + 1 < chars.length) {
         const nextKana = chars[i + 1];
-        // 次が母音、やゆよ、な行の場合、'n'を2回続ける必要がある
-        if (['a', 'i', 'u', 'e', 'o', 'y'].includes(kanaToRomanMap[nextKana]?.[0]?.charAt(0) ?? '') || nextKana === 'な' || nextKana === 'に' || nextKana === 'ぬ' || nextKana === 'ね' || nextKana === 'の') {
+        if (['a', 'i', 'u', 'e', 'o', 'y', 'n'].includes(kanaToRomanMap[nextKana]?.[0]?.charAt(0) ?? '')) {
             romaji = 'nn';
         }
       }
 
-
-      newProblem.push({ kana, romaji, typed: false });
+      newProblemKana.push({ kana, romaji, typed: false });
       i++;
     }
 
-    problem.value = newProblem;
+    problemKana.value = newProblemKana;
     currentIndex.value = 0;
     currentInput.value = '';
     isFinished.value = false;
@@ -92,30 +104,29 @@ export function useTyping(word: string) {
     const validationResult = validateInput(newTyped, [targetRomaji]);
 
     if (validationResult === 'correct') {
-      problem.value[currentIndex.value].typed = true;
+      problemKana.value[currentIndex.value].typed = true;
       currentInput.value = '';
       currentIndex.value++;
-      if (currentIndex.value >= problem.value.length) {
+      if (currentIndex.value >= problemKana.value.length) {
         isFinished.value = true;
       }
     } else if (validationResult === 'in-progress') {
       currentInput.value = newTyped;
     } else {
-      // 不正解の場合、入力をリセット（または効果音など）
-      currentInput.value = '';
+      // Incorrect input, do nothing or provide feedback
     }
   }
 
   // 初期化
-  setProblem(word);
+  setProblem(initialProblem);
 
   return {
-    problem: readonly(problem),
-    currentIndex: readonly(currentIndex),
-    currentInput: readonly(currentInput),
-    isFinished: readonly(isFinished),
-    remainingKana,
+    currentDisplayWord: readonly(currentDisplayWord),
+    fullRomaji,
     typedRomaji,
+    currentInput: readonly(currentInput),
+    remainingRomaji,
+    isFinished: readonly(isFinished),
     setProblem,
     handleKeyInput,
   };
