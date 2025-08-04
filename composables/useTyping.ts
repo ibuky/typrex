@@ -95,8 +95,8 @@ export function useTyping(initialProblem: Problem) {
    * ユーザーのキー入力を処理する
    * @param key 入力されたキー
    */
-  function handleKeyInput(key: string) {
-    if (isFinished.value) return;
+  function handleKeyInput(key: string): boolean {
+    if (isFinished.value) return true;
 
     const targetRomaji = currentTarget.value?.romaji ?? '';
     const newTyped = currentInput.value + key;
@@ -110,10 +110,13 @@ export function useTyping(initialProblem: Problem) {
       if (currentIndex.value >= problemKana.value.length) {
         isFinished.value = true;
       }
+      return true;
     } else if (validationResult === 'in-progress') {
       currentInput.value = newTyped;
+      return true;
     } else {
-      // Incorrect input, do nothing or provide feedback
+      // Incorrect input
+      return false;
     }
   }
 
