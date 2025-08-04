@@ -16,17 +16,23 @@ export function useTyping(initialProblem: Problem) {
   const currentInput = ref('');
   const isFinished = ref(false);
 
+  // Performance tracking
+  const mistakeCount = ref(0);
+  const startTime = ref(0);
+  const wpm = ref(0);
+  const accuracy = ref(0);
+
   // 現在のターゲット文字
   const currentTarget = computed(() => problemKana.value[currentIndex.value] ?? null);
-
+  
   // 問題全体のローマ字表記
   const fullRomaji = computed(() => problemKana.value.map(p => p.romaji).join(''));
-
+  
   // 表示用の入力済みローマ字
   const typedRomaji = computed(() => {
     return problemKana.value.slice(0, currentIndex.value).map(p => p.romaji).join('');
   });
-
+  
   // 未入力のローマ字全体
   const remainingRomaji = computed(() => {
     if (!currentTarget.value) return '';
@@ -50,6 +56,23 @@ export function useTyping(initialProblem: Problem) {
     const future = problemKana.value.slice(currentIndex.value + 1).map(p => p.romaji).join('');
     return untypedCurrent + future;
   });
+
+  /**
+   * Calculates WPM and accuracy.
+   */
+  function calculatePerformance() {
+    const endTime = Date.now();
+    const elapsedTime = (endTime - startTime.value) / 1000; // in seconds
+    const typedChars = fullRomaji.value.length;
+
+    // Calculate WPM (Words Per Minute)
+    // A "word" is considered to be 5 characters.
+    wpm.value = elapsedTime > 0 ? (typedChars / 5) / (elapsedTime / 60) : 0;
+
+    // Calculate Accuracy
+    const totalTyped = typedChars + mistakeCount.value;
+    accuracy.value = totalTyped > 0 ? (typedChars / totalTyped) * 100 : 100;
+  }
 
   /**
    * 新しい単語でタイピング状態を初期化する
@@ -103,6 +126,12 @@ export function useTyping(initialProblem: Problem) {
     currentIndex.value = 0;
     currentInput.value = '';
     isFinished.value = false;
+    
+    // Reset performance stats
+    mistakeCount.value = 0;
+    startTime.value = 0;
+    wpm.value = 0;
+    accuracy.value = 0;
   }
 
   /**
@@ -111,6 +140,11 @@ export function useTyping(initialProblem: Problem) {
    */
   function handleKeyInput(key: string): boolean {
     if (isFinished.value) return true;
+
+    // Start timer on first keypress
+    if (startTime.value === 0) {
+      startTime.value = Date.now();
+    }
 
     const targetOptions = currentTarget.value?.romajiOptions ?? [];
     const newTyped = currentInput.value + key;
@@ -147,6 +181,7 @@ export function useTyping(initialProblem: Problem) {
       currentIndex.value++;
       if (currentIndex.value >= problemKana.value.length) {
         isFinished.value = true;
+        calculatePerformance();
       }
       return true;
     } else if (validationResult === 'in-progress') {
@@ -162,11 +197,11 @@ export function useTyping(initialProblem: Problem) {
         currentInput.value = '';
         currentIndex.value++;
         isFinished.value = true;
+        calculatePerformance();
       }
       return true;
     } else {
-      // 不正解入力: ここで入力をリセットするかどうかは仕様による
-      // 今回はリセットしない
+      mistakeCount.value++;
       return false;
     }
   }
@@ -181,6 +216,8 @@ export function useTyping(initialProblem: Problem) {
     currentInput: readonly(currentInput),
     remainingRomaji,
     isFinished: readonly(isFinished),
+    wpm: readonly(wpm),
+    accuracy: readonly(accuracy),
     setProblem,
     handleKeyInput,
   };
