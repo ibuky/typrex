@@ -37,11 +37,22 @@ export function useTyping(initialProblem: Problem) {
   // 未入力のローマ字全体
   const remainingRomaji = computed(() => {
     if (!currentTarget.value) return '';
-    // 現在のターゲットの未入力部分
-    const currentOptions = currentTarget.value.romajiOptions;
-    // 'in-progress'状態の最適な候補を見つける
-    const inProgressOption = currentOptions.find(opt => opt.startsWith(currentInput.value)) || currentTarget.value.romaji;
-    const untypedCurrent = inProgressOption.substring(currentInput.value.length);
+    
+    let untypedCurrent = '';
+    if (currentInput.value === '') {
+        // If nothing is typed for the current char, show its canonical romaji.
+        untypedCurrent = currentTarget.value.romaji;
+    } else {
+        // If user is typing, find the best matching option and show the rest of it.
+        const currentOptions = currentTarget.value.romajiOptions;
+        const inProgressOption = currentOptions.find(opt => opt.startsWith(currentInput.value));
+        if (inProgressOption) {
+            untypedCurrent = inProgressOption.substring(currentInput.value.length);
+        } else {
+            // This case should not happen if input validation is correct, but as a fallback:
+            untypedCurrent = ''; 
+        }
+    }
 
     const future = problemKana.value.slice(currentIndex.value + 1).map(p => p.romaji).join('');
     return untypedCurrent + future;
@@ -110,8 +121,30 @@ export function useTyping(initialProblem: Problem) {
     const targetOptions = currentTarget.value?.romajiOptions ?? [];
     const newTyped = currentInput.value + key;
 
-    const validationResult = validateInput(newTyped, targetOptions);
+    let validationResult = validateInput(newTyped, targetOptions);
 
+    // `n`の後の入力で不正解になった場合、次の文字の開始とみなすか判定
+    if (validationResult === 'incorrect' && currentTarget.value?.kana === 'ん' && currentInput.value === 'n') {
+      const nextKanaInfo = problemKana.value[currentIndex.value + 1];
+      if (nextKanaInfo) {
+        const nextKanaOptions = nextKanaInfo.romajiOptions;
+        const isStartOfNext = nextKanaOptions.some(opt => opt.startsWith(key));
+        // nnが必要なケース（あいうえお、やゆよ、な行で始まる）
+        const isNnRequired = nextKanaOptions.some(r => ['a', 'i', 'u', 'e', 'o', 'y', 'n'].includes(r.charAt(0)));
+
+        if (isStartOfNext && !isNnRequired) {
+          // 'ん'を'n'で確定
+          problemKana.value[currentIndex.value].romaji = 'n';
+          problemKana.value[currentIndex.value].typed = true;
+          currentIndex.value++;
+          
+          // 入力をリセットして、新しい文字の処理をやり直す
+          currentInput.value = '';
+          return handleKeyInput(key); // 再帰呼び出しで新しいキーを処理
+        }
+      }
+    }
+    
     if (validationResult === 'correct') {
       // どの有効なローマ字で入力完了したかを設定
       problemKana.value[currentIndex.value].romaji = newTyped;
