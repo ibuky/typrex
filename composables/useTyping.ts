@@ -11,7 +11,8 @@ export interface Problem {
 // 問題の各文字の状態を定義
 interface CharInfo {
   kana: string;
-  romaji: string;
+  romaji: string; // 実際にタイプされた、またはタイプの基準となるローマ字
+  romajiOptions: string[]; // 有効なローマ字の選択肢
   typed: boolean;
 }
 
@@ -36,7 +37,12 @@ export function useTyping(initialProblem: Problem) {
   // 未入力のローマ字全体
   const remainingRomaji = computed(() => {
     if (!currentTarget.value) return '';
-    const untypedCurrent = currentTarget.value.romaji.substring(currentInput.value.length);
+    // 現在のターゲットの未入力部分
+    const currentOptions = currentTarget.value.romajiOptions;
+    // 'in-progress'状態の最適な候補を見つける
+    const inProgressOption = currentOptions.find(opt => opt.startsWith(currentInput.value)) || currentTarget.value.romaji;
+    const untypedCurrent = inProgressOption.substring(currentInput.value.length);
+
     const future = problemKana.value.slice(currentIndex.value + 1).map(p => p.romaji).join('');
     return untypedCurrent + future;
   });
@@ -62,26 +68,29 @@ export function useTyping(initialProblem: Problem) {
         }
       }
 
-      let romaji = kanaToRomanMap[kana]?.[0] ?? '';
+      const romajiOptions = kanaToRomanMap[kana] ? [...kanaToRomanMap[kana]] : [''];
+      let romaji = romajiOptions[0];
 
       // 促音「っ」の処理
       if (kana === 'っ' && i + 1 < chars.length) {
-        const nextKana = chars[i + 1];
-        const nextRomaji = kanaToRomanMap[nextKana]?.[0];
-        if (nextRomaji) {
-          romaji = nextRomaji.charAt(0);
-        }
+        const nextKanaChars = (chars[i + 1] + (chars[i + 2] || '')).slice(0, 2);
+        const nextKana = kanaToRomanMap[nextKanaChars] ? nextKanaChars : chars[i + 1];
+        const nextRomajiOptions = kanaToRomanMap[nextKana] || [''];
+        romaji = nextRomajiOptions[0].charAt(0);
+        // 促音のタイピングバリエーションを追加
+        romajiOptions.push(...nextRomajiOptions.map(r => r.charAt(0)));
       }
       
       // 撥音「ん」の特別処理
       if (kana === 'ん' && i + 1 < chars.length) {
         const nextKana = chars[i + 1];
-        if (['a', 'i', 'u', 'e', 'o', 'y', 'n'].includes(kanaToRomanMap[nextKana]?.[0]?.charAt(0) ?? '')) {
+        const nextRomajiOptions = kanaToRomanMap[nextKana] || [''];
+        if (nextRomajiOptions.some(r => ['a', 'i', 'u', 'e', 'o', 'y', 'n'].includes(r.charAt(0)))) {
             romaji = 'nn';
         }
       }
 
-      newProblemKana.push({ kana, romaji, typed: false });
+      newProblemKana.push({ kana, romaji, romajiOptions, typed: false });
       i++;
     }
 
@@ -98,12 +107,14 @@ export function useTyping(initialProblem: Problem) {
   function handleKeyInput(key: string): boolean {
     if (isFinished.value) return true;
 
-    const targetRomaji = currentTarget.value?.romaji ?? '';
+    const targetOptions = currentTarget.value?.romajiOptions ?? [];
     const newTyped = currentInput.value + key;
 
-    const validationResult = validateInput(newTyped, [targetRomaji]);
+    const validationResult = validateInput(newTyped, targetOptions);
 
     if (validationResult === 'correct') {
+      // どの有効なローマ字で入力完了したかを設定
+      problemKana.value[currentIndex.value].romaji = newTyped;
       problemKana.value[currentIndex.value].typed = true;
       currentInput.value = '';
       currentIndex.value++;
@@ -113,9 +124,22 @@ export function useTyping(initialProblem: Problem) {
       return true;
     } else if (validationResult === 'in-progress') {
       currentInput.value = newTyped;
+      // EDGE CASE: 単語末尾の「ん」は「n」一文字で即時確定させる
+      if (
+        currentIndex.value === problemKana.value.length - 1 &&
+        currentTarget.value?.kana === 'ん' &&
+        newTyped === 'n'
+      ) {
+        problemKana.value[currentIndex.value].romaji = newTyped;
+        problemKana.value[currentIndex.value].typed = true;
+        currentInput.value = '';
+        currentIndex.value++;
+        isFinished.value = true;
+      }
       return true;
     } else {
-      // Incorrect input
+      // 不正解入力: ここで入力をリセットするかどうかは仕様による
+      // 今回はリセットしない
       return false;
     }
   }
