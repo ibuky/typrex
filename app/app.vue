@@ -1,29 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useTyping, type Problem } from '../composables/useTyping';
-
-// 問題リストを拡充
-const allProblems: Problem[] = [
-  { word: 'インターネット', kana: 'いんたーねっと' },
-  { word: '新幹線', kana: 'しんかんせん' },
-  { word: '探偵', kana: 'たんてい' },
-  { word: '散歩', kana: 'さんぽ' },
-  { word: '音楽鑑賞', kana: 'おんがくかんしょう' },
-  { word: '切符', kana: 'きっぷ' },
-  { word: '北海道', kana: 'ほっかいどう' },
-  { word: '合宿', kana: 'がっしゅく' },
-  { word: 'ラッコ', kana: 'らっこ' },
-  { word: 'ココナッツ', kana: 'ここなっつ' },
-  { word: '日本', kana: 'にっぽん' },
-  { word: '桜', kana: 'さくら' },
-  { word: 'タイピングゲーム', kana: 'たいぴんぐげーむ' },
-  { word: 'プログラミング', kana: 'ぷろぐらみんぐ' },
-  { word: '寿司', kana: 'すし' },
-];
+import { problems as allProblems } from '../constants/problems';
 
 const shuffledProblems = ref<Problem[]>([]);
 const currentProblemIndex = ref(0);
 const isMistyped = ref(false);
+
+// Template refs for scrolling logic
+const textContainer = ref<HTMLElement | null>(null);
+const typedTextSpan = ref<HTMLElement | null>(null);
 
 // Fisher-Yates shuffle algorithm
 const shuffle = (array: Problem[]) => {
@@ -48,6 +34,10 @@ const {
 const nextProblem = () => {
   currentProblemIndex.value = (currentProblemIndex.value + 1) % shuffledProblems.value.length;
   setProblem(shuffledProblems.value[currentProblemIndex.value]);
+  // Reset scroll on new problem
+  if (textContainer.value) {
+    textContainer.value.scrollLeft = 0;
+  }
 };
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -66,6 +56,27 @@ const handleKeyDown = (e: KeyboardEvent) => {
     }
   }
 };
+
+// Watch for changes in typed text to handle scrolling
+watch(typedRomaji, async () => {
+  await nextTick();
+  if (!textContainer.value || !typedTextSpan.value) return;
+
+  const container = textContainer.value;
+  const typedTextEl = typedTextSpan.value;
+
+  const containerWidth = container.clientWidth;
+  const caretPosition = typedTextEl.offsetWidth;
+  
+  const centerPoint = containerWidth / 2;
+  const desiredScrollLeft = caretPosition - centerPoint;
+
+  if (desiredScrollLeft > 0) {
+    container.scrollLeft = desiredScrollLeft;
+  } else {
+    container.scrollLeft = 0;
+  }
+});
 
 // isFinished の状態を監視して自動で次の問題へ
 watch(isFinished, (newValue) => {
@@ -111,12 +122,15 @@ onUnmounted(() => {
           {{ fullRomaji }}
         </p>
         
-        <div class="p-5 bg-gray-800/50 rounded-lg text-4xl font-mono tracking-wider relative overflow-hidden">
+        <div 
+          ref="textContainer"
+          class="p-5 bg-gray-800/50 rounded-lg text-4xl font-mono tracking-wider relative overflow-hidden whitespace-nowrap"
+        >
           <div 
             class="absolute top-0 left-0 h-full bg-green-400/20 transition-all duration-150" 
             :style="{ width: `${(typedRomaji.length / fullRomaji.length) * 100}%` }"
           ></div>
-          <span class="relative text-green-400">{{ typedRomaji }}</span>
+          <span ref="typedTextSpan" class="relative text-green-400">{{ typedRomaji }}</span>
           <span class="relative text-blue-400 border-b-4 border-blue-500 animate-pulse">{{ currentInput }}</span>
           <span class="relative text-gray-500">{{ remainingRomaji }}</span>
         </div>

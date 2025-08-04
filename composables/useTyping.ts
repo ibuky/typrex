@@ -1,19 +1,12 @@
 // composables/useTyping.ts
 import { ref, computed, readonly } from 'vue';
-import { kanaToRomanMap, validateInput } from '../utils/typingLogic';
+import { kanaToRomanMap } from '../constants/kanaToRomanMap';
+import { validateInput } from '../utils/typingLogic';
 
 // 問題の形式
 export interface Problem {
   word: string; // 表示用（漢字など）
   kana: string; // 判定用（かな）
-}
-
-// 問題の各文字の状態を定義
-interface CharInfo {
-  kana: string;
-  romaji: string; // 実際にタイプされた、またはタイプの基準となるローマ字
-  romajiOptions: string[]; // 有効なローマ字の選択肢
-  typed: boolean;
 }
 
 export function useTyping(initialProblem: Problem) {
@@ -70,19 +63,20 @@ export function useTyping(initialProblem: Problem) {
 
     while (i < chars.length) {
       let kana = chars[i];
-      // 拗音（きゃ、きゅ、きょなど）の処理
-      if (i + 1 < chars.length && ['ゃ', 'ゅ', 'ょ', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ'].includes(chars[i + 1])) {
-        const combined = chars[i] + chars[i + 1];
-        if (kanaToRomanMap[combined]) {
-          kana = combined;
+      // 拗音や促音などの結合処理
+      if (i + 1 < chars.length) {
+        // 拗音(きゃ等)の結合
+        const combinedKana = chars[i] + chars[i + 1];
+        if (kanaToRomanMap[combinedKana]) {
+          kana = combinedKana;
           i++;
         }
       }
 
-      const romajiOptions = kanaToRomanMap[kana] ? [...kanaToRomanMap[kana]] : [''];
+      const romajiOptions = kanaToRomanMap[kana] ? [...kanaToRomanMap[kana]] : [kana];
       let romaji = romajiOptions[0];
 
-      // 促音「っ」の処理
+      // 促音「っ」の特別処理
       if (kana === 'っ' && i + 1 < chars.length) {
         const nextKanaChars = (chars[i + 1] + (chars[i + 2] || '')).slice(0, 2);
         const nextKana = kanaToRomanMap[nextKanaChars] ? nextKanaChars : chars[i + 1];

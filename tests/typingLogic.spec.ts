@@ -1,7 +1,8 @@
 // tests/typingLogic.spec.ts
 
 import { describe, it, expect } from 'vitest';
-import { kanaToRomanMap, validateInput } from '../utils/typingLogic';
+import { kanaToRomanMap } from '../constants/kanaToRomanMap';
+import { validateInput } from '../utils/typingLogic';
 
 describe('validateInput', () => {
   // 「ん」以外のすべてのエントリをテスト
