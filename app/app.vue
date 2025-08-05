@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue';
 import { useTyping, type Problem } from '../composables/useTyping';
-import { problems as allProblemCategories } from '../constants/problems';
+import { problems as staticProblemCategories } from '../constants/problems';
 import { levels, getLevelFromScore, type Level } from '../constants/gameMechanics';
 
 // --- State ---
@@ -12,6 +12,8 @@ const problemPool = ref<Problem[]>([]);
 const problemsCompleted = ref(0);
 const isMistyped = ref(false);
 const showResultModal = ref(false);
+const isLoading = ref(false);
+const loadingError = ref<string | null>(null);
 
 // Session performance stats
 const sessionStats = ref({
@@ -43,28 +45,52 @@ const {
 } = useTyping({ word: 'はじめましょう', kana: 'はじめましょう' });
 
 // --- Computed Properties ---
-const categories = computed(() => Object.keys(allProblemCategories));
+const categories = computed(() => [...Object.keys(staticProblemCategories), 'Wikipedia']);
 
 // --- Functions ---
-const startNewSession = () => {
+const startNewSession = async () => {
+  isLoading.value = true;
+  loadingError.value = null;
   problemsCompleted.value = 0;
   sessionStats.value = { totalTypedChars: 0, totalMistakes: 0, totalTime: 0 };
   showResultModal.value = false;
 
-  const categoryProblems = allProblemCategories[currentCategory.value];
   let sessionProblems: Problem[] = [];
-  while (sessionProblems.length < selectedSessionLength.value) {
-    const shuffled = [...categoryProblems].sort(() => 0.5 - Math.random());
-    sessionProblems.push(...shuffled);
+  try {
+    if (currentCategory.value === 'Wikipedia') {
+      const response = await fetch('/api/wikipedia');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Wikipedia問題の取得に失敗しました。');
+      }
+      sessionProblems = await response.json();
+    } else {
+      const categoryProblems = staticProblemCategories[currentCategory.value];
+      while (sessionProblems.length < selectedSessionLength.value) {
+        const shuffled = [...categoryProblems].sort(() => 0.5 - Math.random());
+        sessionProblems.push(...shuffled);
+      }
+      sessionProblems = sessionProblems.slice(0, selectedSessionLength.value);
+    }
+    
+    if (sessionProblems.length === 0) {
+      throw new Error('問題が見つかりませんでした。');
+    }
+    problemPool.value = sessionProblems;
+    setProblem(problemPool.value[0]);
+
+  } catch (error: any) {
+    console.error('Full error object:', error);
+    loadingError.value = error.response?._data?.error || error.message || '不明なエラーが発生しました。';
+    setProblem({ word: 'エラー', kana: 'えらー' });
+  } finally {
+    isLoading.value = false;
   }
-  problemPool.value = sessionProblems.slice(0, selectedSessionLength.value);
-  
-  setProblem(problemPool.value[0]);
 };
 
 const proceedToNextProblem = () => {
   problemsCompleted.value++;
-  if (problemsCompleted.value >= selectedSessionLength.value) {
+  if (problemsCompleted.value >= problemPool.value.length) {
     calculateFinalPerformance();
     showResultModal.value = true;
   } else {
@@ -77,11 +103,8 @@ const calculateFinalPerformance = () => {
   const totalTimeInSeconds = totalTime / 1000;
   
   finalWpm.value = totalTimeInSeconds > 0 ? (totalTypedChars / 5) / (totalTimeInSeconds / 60) : 0;
-
   const totalAttempts = totalTypedChars + totalMistakes;
   finalAccuracy.value = totalAttempts > 0 ? (totalTypedChars / totalAttempts) * 100 : 100;
-
-  // Score = (Total Chars) * (WPM / 10)^2 * (Accuracy Percentage / 100)^3
   const score = (totalTypedChars * Math.pow(finalWpm.value / 10, 2)) * Math.pow(finalAccuracy.value / 100, 3);
   finalScore.value = score;
   finalLevel.value = getLevelFromScore(score);
@@ -106,7 +129,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     return;
   }
 
-  if (e.target !== document.body || isFinished.value) return;
+  if (e.target !== document.body || isFinished.value || isLoading.value) return;
   e.preventDefault();
 
   if (e.key.length === 1) {
@@ -128,7 +151,7 @@ watch(typedRomaji, async () => {
 });
 
 watch(isFinished, (newValue) => {
-  if (newValue) {
+  if (newValue && !isLoading.value) {
     sessionStats.value.totalTypedChars += fullRomaji.value.length;
     sessionStats.value.totalMistakes += mistakeCount.value;
     sessionStats.value.totalTime += elapsedTime.value;
@@ -170,7 +193,7 @@ onUnmounted(() => {
           </button>
         </nav>
       </div>
-      <div>
+      <div v-if="currentCategory !== 'Wikipedia'">
         <h2 class="text-2xl font-bold mb-4 text-cyan-400">問題数</h2>
         <nav class="flex flex-col space-y-2">
           <button
@@ -188,28 +211,37 @@ onUnmounted(() => {
 
     <!-- Main Content Area -->
     <div class="flex-1 flex flex-col items-center justify-center p-8">
-      <header class="w-full max-w-4xl mb-4">
-        <div class="text-right text-2xl font-bold text-gray-400">
-          {{ problemsCompleted }} / {{ selectedSessionLength }}
+      <header class="w-full max-w-4xl mb-4 h-8">
+        <div v-if="!isLoading && !loadingError" class="text-right text-2xl font-bold text-gray-400">
+          {{ problemsCompleted }} / {{ problemPool.length }}
         </div>
       </header>
       <main 
         class="w-full max-w-4xl transition-all duration-300 bg-white/20 dark:bg-black/50 backdrop-blur-xl ring-1 ring-gray-200 dark:ring-gray-800 rounded-2xl shadow-2xl"
         :class="{ 'animate-shake': isMistyped }"
       >
-        <div class="p-10 text-center space-y-8">
-          <p class="text-3xl md:text-5xl text-white font-semibold tracking-wider min-h-[60px]">
-            {{ currentDisplayWord }}
-          </p>
-          
-          <div 
-            ref="textContainer"
-            class="p-5 bg-gray-800/50 rounded-lg text-2xl md:text-4xl font-mono tracking-wider relative overflow-x-auto whitespace-nowrap no-scrollbar"
-          >
-            <span ref="typedTextSpan" class="text-green-400">{{ typedRomaji }}</span>
-            <span class="text-blue-400 border-b-4 border-blue-500 animate-pulse">{{ currentInput }}</span>
-            <span class="text-gray-500">{{ remainingRomaji }}</span>
+        <div class="p-10 text-center space-y-8 min-h-[250px] flex flex-col justify-center">
+          <div v-if="isLoading" class="text-2xl text-cyan-300">
+            Wikipediaから問題生成中...
           </div>
+          <div v-else-if="loadingError" class="text-2xl text-red-400">
+            <p>エラーが発生しました:</p>
+            <p class="text-base mt-2">{{ loadingError }}</p>
+          </div>
+          <template v-else>
+            <p class="text-3xl md:text-5xl text-white font-semibold tracking-wider min-h-[60px]">
+              {{ currentDisplayWord }}
+            </p>
+            
+            <div 
+              ref="textContainer"
+              class="p-5 bg-gray-800/50 rounded-lg text-2xl md:text-4xl font-mono tracking-wider relative overflow-x-auto whitespace-nowrap no-scrollbar"
+            >
+              <span ref="typedTextSpan" class="text-green-400">{{ typedRomaji }}</span>
+              <span class="text-blue-400 border-b-4 border-blue-500 animate-pulse">{{ currentInput }}</span>
+              <span class="text-gray-500">{{ remainingRomaji }}</span>
+            </div>
+          </template>
         </div>
       </main>
       <footer class="absolute bottom-4 text-gray-500 text-sm">
