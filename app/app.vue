@@ -46,6 +46,10 @@ const {
 
 // --- Computed Properties ---
 const categories = computed(() => [...Object.keys(staticProblemCategories), 'Wikipedia']);
+const upcomingProblems = computed(() => {
+  const remaining = problemPool.value.slice(problemsCompleted.value + 1, problemsCompleted.value + 6);
+  return remaining.map(p => p.word.substring(0, 15) + '...');
+});
 
 // --- Functions ---
 const startNewSession = async () => {
@@ -244,10 +248,20 @@ onUnmounted(() => {
           </template>
         </div>
       </main>
-      <footer class="absolute bottom-4 text-gray-500 text-sm">
-        日本語の問題をローマ字で入力してください。
-      </footer>
     </div>
+
+    <!-- Right Sidebar for Upcoming Problems -->
+    <aside class="w-64 bg-gray-900/50 backdrop-blur-lg p-6 shadow-2xl flex flex-col">
+      <h2 class="text-2xl font-bold mb-6 text-cyan-400">次の問題</h2>
+      <div class="flex flex-col space-y-3">
+        <div v-for="(problem, index) in upcomingProblems" :key="index"
+             class="bg-white/5 p-3 rounded-lg text-gray-400 truncate"
+             :style="{ opacity: 1 - index * 0.15 }"
+        >
+          {{ problem }}
+        </div>
+      </div>
+    </aside>
 
     <!-- Result Modal -->
     <div v-if="showResultModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
